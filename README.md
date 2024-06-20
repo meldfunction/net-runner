@@ -39,7 +39,7 @@ Explore the context and vision of Netrunner:
 - [History](about/history.md): The web's evolution and Netrunner's origins
 - [Roadmap](about/roadmap.md): Our future plans and milestones
 - [Data Missions](about/data_missions.md): Guided exercises for web data exploration
-- [Dumb Runner Challenges](about/dumb_runner_challenges.md): Manual web tasks to appreciate Netrunner's power
+- [Dumb Runner Challenges](about/dumb_netrunner.md): Manual web tasks to appreciate Netrunner's power
 
 ## Contributing
 
