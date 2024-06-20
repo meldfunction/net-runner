@@ -1,53 +1,75 @@
+```markdown
+# Dredge Runner Usage Guide
+
+Dredge Runner can be run either directly with Python or using Docker. Choose the method that best suits your environment and preferences.
+
+## Method 1: Running with Python
+
 ### Prerequisites
+- Python 3.x
+- Required Python libraries: `requests`, `beautifulsoup4`, `tqdm`
 
-- Python 3.x installed on your system
-- The following Python libraries installed:
-  - `requests`
-  - `beautifulsoup4`
-  - `tqdm`
-
-You can install the required libraries using pip:
-
+Install the required libraries:
 ```
 pip install requests beautifulsoup4 tqdm
 ```
 
 ### Usage
-
-1. Clone or download the repository containing the "Dredge Runner" script.
-2. Navigate to the project directory in your terminal or command prompt.
-3. Run the script using the following command:
+1. Clone or download the Dredge Runner repository.
+2. Navigate to the project directory in your terminal.
+3. Run the script:
 
 ```
 python cli.py -d "path/to/html/files" -o "downloads" -c 10 -l debug
 ```
 
-This command will:
+## Method 2: Running with Docker
 
-- Prompt the user to enter the name of the HTML file containing the URLs, located in the `"path/to/html/files"` directory.
-- Download the PDFs from the extracted URLs and save them in the `"downloads"` directory.
-- Use a concurrency level of 10 to download the PDFs.
-- Set the log level to `"debug"` for detailed logging.
+### Prerequisites
+- Docker installed on your system
 
-The script will display a progress bar showing the overall download progress, and the download details (successful downloads, failed downloads, errors) will be logged to the `"pdf_downloader.log"` file.
+### Building the Docker Image
+1. Navigate to the project directory containing the Dockerfile.
+2. Build the Docker image:
 
-### Configuration
+```
+docker build -t dredge-runner .
+```
 
-The script has the following configurable options:
+### Running the Docker Container
 
-- `--input-dir` (`-d`): The directory where the HTML file containing the URLs is located.
-- `--output-dir` (`-o`): The directory to save the downloaded PDFs.
-- `--log-level` (`-l`): The log level (options: `"debug"`, `"info"`, `"warning"`, `"error"`).
-- `--concurrency` (`-c`): The number of concurrent downloads to perform.
+```
+docker run -v /path/to/local/input:/app/input -v /path/to/local/output:/app/output dredge-runner -d "/app/input" -o "/app/output" -c 10 -l debug
+```
 
-You can adjust these settings by modifying the corresponding arguments when running the `cli.py` script.
+Replace `/path/to/local/input` with your local input directory path and `/path/to/local/output` with your desired output directory path.
 
-### Resumable Downloads
+## Configuration Options
 
-The "Dredge Runner" script supports resumable downloads, meaning that if a download is interrupted, the script can resume from the last successful checkpoint. The download progress is stored in the `"download_progress.pkl"` file.
+Both methods use the same configuration options:
 
-### Extensibility and Modularity
+- `--input-dir` (`-d`): Directory containing the HTML file with URLs.
+- `--output-dir` (`-o`): Directory to save downloaded PDFs.
+- `--log-level` (`-l`): Log level (`debug`, `info`, `warning`, `error`).
+- `--concurrency` (`-c`): Number of concurrent downloads.
 
-The "Dredge Runner" project has been designed with modularity in mind. The script is divided into several components, including URL extraction, PDF downloading, and download progress tracking, allowing for easy maintenance, customization, and future expansion.
+## Workflow
 
-If you'd like to contribute to the project or modify the existing functionality, please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for more information.
+Regardless of the method chosen, Dredge Runner will:
+
+1. Prompt for the HTML file name in the input directory.
+2. Extract URLs from the HTML file.
+3. Download PDFs from the extracted URLs to the output directory.
+4. Display a progress bar for overall download progress.
+5. Log download details to `pdf_downloader.log`.
+
+## Resumable Downloads
+
+Dredge Runner supports resuming interrupted downloads. Progress is saved in `download_progress.pkl`.
+
+## Extensibility
+
+The project is modular, allowing for easy maintenance and customization. For contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
+```
+
+This updated USAGE.md now clearly presents both methods of running Dredge Runner (Python and Docker), provides the necessary commands for each, and maintains a consistent structure for easy comprehension. It also retains important information about configuration options, workflow, resumable downloads, and extensibility.
