@@ -1,5 +1,5 @@
-# requirements.txt
-requests
-beautifulsoup4
-tqdm
-unittest-xml-reporting
+requests==2.26.0
+beautifulsoup4==4.9.3
+tqdm==4.62.3
+pdfkit==1.0.0
+colorama==0.4.4

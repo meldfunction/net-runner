@@ -1,164 +1,99 @@
-import os
 import requests
-import hashlib
-import time
-from urllib.parse import urlparse, parse_qs
-from bs4 import BeautifulSoup
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+import os
 import logging
+from urllib.parse import urlparse
+import time
+import random
 
 class PDFDownloader:
-    def __init__(self, max_retries=3, retry_delay=2, concurrency_level=5, log_file="pdf_downloader.log"):
-        self.MAX_RETRIES = max_retries
-        self.RETRY_DELAY = retry_delay
-        self.CONCURRENCY_LEVEL = concurrency_level
+    def __init__(self, concurrency_level=5, log_file='pdf_downloader.log', user_agent=None):
+        self.concurrency_level = concurrency_level
+        self.logger = self._setup_logger(log_file)
+        self.user_agent = user_agent or 'Netrunner PDF Downloader/1.0'
+        self.successful_downloads = 0
+        self.failed_downloads = 0
 
-        # Create the logger
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
+    def _setup_logger(self, log_file):
+        logger = logging.getLogger('pdf_downloader')
+        logger.setLevel(logging.DEBUG)
+        fh = logging.FileHandler(log_file)
+        fh.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+        return logger
 
-        # Create file handler and console handler
-        file_handler = logging.FileHandler(log_file)
-        console_handler = logging.StreamHandler()
+    def download_pdf(self, url, output_dir, max_retries=3):
+        filename = self._get_filename(url)
+        filepath = os.path.join(output_dir, filename)
 
-        # Create formatter and add it to the handlers
-        formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s', '%Y-%m-%d %H:%M:%S')
-        file_handler.setFormatter(formatter)
-        console_handler.setFormatter(formatter)
+        headers = {'User-Agent': self.user_agent}
 
-        # Add the handlers to the logger
-        self.logger.addHandler(file_handler)
-        self.logger.addHandler(console_handler)
-
-    def get_website_title(self, url):
-        """
-        Retrieves the title of the website for the given URL.
-        Args:
-            url (str): The URL of the website.
-        Returns:
-            str or None: The title of the website, or None if an error occurs.
-        """
-        try:
-            response = requests.get(url)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            title = soup.find('title').text.strip()
-            return title
-        except Exception as e:
-            self.logger.error(f"Error getting website title for {url}: {e}")
-            return None
-
-    def download_pdf(self, url, output_dir="downloads", resume_data=None):
-        """
-        Downloads a PDF from the given URL and extracts the filename.
-        Args:
-            url (str): The URL of the PDF to download.
-            output_dir (str, optional): The directory to save the downloaded PDF. Defaults to "downloads".
-            resume_data (dict, optional): The download progress data to resume the download.
-        Returns:
-            str: The filename of the downloaded PDF or None if the download failed.
-        """
-        # Create the output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Resume the download if resume_data is provided
-        start_byte = 0
-        if resume_data:
-            start_byte = resume_data.get("downloaded_bytes", 0)
-            self.logger.info(f"Resuming download from {start_byte} bytes for {url}")
-
-        for attempt in range(1, self.MAX_RETRIES + 1):
+        for attempt in range(max_retries):
             try:
-                # Transform the URL for Google Doc PDF links
-                if "docs.google.com" in url:
-                    parsed_url = urlparse(url)
-                    query_params = parse_qs(parsed_url.query)
-                    doc_id = query_params.get("id", [None])[0]
-                    if doc_id:
-                        url = f"https://docs.google.com/document/d/{doc_id}/export?format=pdf"
+                response = requests.get(url, stream=True, timeout=30, headers=headers)
+                response.raise_for_status()
 
-                headers = {}
-                if start_byte > 0:
-                    headers["Range"] = f"bytes={start_byte}-"
+                content_type = response.headers.get('Content-Type', '').lower()
+                if 'application/pdf' not in content_type:
+                    self.logger.warning(f"Skipping non-PDF content: {url} (Content-Type: {content_type})")
+                    self.failed_downloads += 1
+                    return False
 
-                response = requests.get(url, stream=True, allow_redirects=True, headers=headers)
-                response.raise_for_status()  # Raise exception for non-200 status codes
+                file_size = int(response.headers.get('Content-Length', 0))
+                if file_size == 0:
+                    self.logger.warning(f"Skipping empty file: {url}")
+                    self.failed_downloads += 1
+                    return False
 
-                # Extract filename from Content-Disposition header (if available)
-                filename = response.headers.get('Content-Disposition')
-                if filename:
-                    # Extract filename from the header (split by ';' and get the second part)
-                    filename = filename.split(';')[1].split('=')[1].strip('"')
-                else:
-                    # Use the website title as the filename if available
-                    title = self.get_website_title(url)
-                    if title:
-                        filename = f"{title.replace(' ', '_')}.pdf"
-                    else:
-                        filename = f"downloaded_pdf_{url.split('/')[-1]}.pdf"
-
-                # Calculate the SHA-256 hash of the first 1024 bytes (optional)
-                pdf_hash = hashlib.sha256(response.content[:1024]).hexdigest()
-
-                # Construct the full output path
-                output_path = os.path.join(output_dir, filename)
-
-                # Download the PDF content in chunks
-                with open(output_path, 'ab') as f:
-                    downloaded_bytes = start_byte
-                    for chunk in response.iter_content(1024):
+                with open(filepath, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
-                            downloaded_bytes += len(chunk)
 
-                self.logger.info(f"Downloaded {filename} (hash: {pdf_hash})")
-                print(f"Downloaded {filename} (hash: {pdf_hash})")
-                return filename
-            except requests.exceptions.RequestException as e:
-                self.logger.error(f"Error downloading {url} (attempt {attempt}/{self.MAX_RETRIES}): {e}")
-                print(f"Error downloading {url} (attempt {attempt}/{self.MAX_RETRIES}): {e}")
-                if attempt < self.MAX_RETRIES:
-                    self.logger.info(f"Retrying in {self.RETRY_DELAY} seconds...")
-                    print(f"Retrying in {self.RETRY_DELAY} seconds...")
-                    time.sleep(self.RETRY_DELAY)
-                    self.RETRY_DELAY *= 2  # Exponential backoff
+                if os.path.getsize(filepath) > 0:
+                    self.logger.info(f"Successfully downloaded: {url}")
+                    self.successful_downloads += 1
+                    return True
                 else:
-                    self.logger.error(f"Maximum retries reached for {url}")
-                    print(f"Maximum retries reached for {url}")
-                    return None
-            except Exception as e:
-                self.logger.error(f"Unexpected error while downloading {url}: {e}")
-                print(f"Unexpected error while downloading {url}: {e}")
-                return None
+                    os.remove(filepath)
+                    self.logger.warning(f"Downloaded file was empty, deleted: {url}")
+                    self.failed_downloads += 1
+                    return False
 
-    def download_pdfs(self, urls, output_dir="downloads"):
-        """
-        Downloads PDFs from the given list of URLs.
-        Args:
-            urls (iterable): An iterable of URLs to download PDFs from.
-            output_dir (str, optional): The directory to save the downloaded PDFs. Defaults to "downloads".
-        """
-        successful_downloads = 0
-        failed_downloads = 0
-        existing_files = set()
+            except requests.RequestException as e:
+                self.logger.error(f"Error downloading {url} (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                time.sleep(random.uniform(1, 3))  # Random delay between retries
 
-        with ThreadPoolExecutor(max_workers=self.CONCURRENCY_LEVEL) as executor, \
-             tqdm(total=len(urls), unit="file", desc="Downloading PDFs") as progress_bar:
-            futures = [executor.submit(self.download_pdf, url, output_dir) for url in urls]
-            for future in futures:
-                filename = future.result()
-                if filename:
-                    if filename in existing_files:
-                        self.logger.warning(f"Removed duplicate file: {filename}")
-                        print(f"Removed duplicate file: {filename}")
-                        os.remove(os.path.join(output_dir, filename))
-                    else:
-                        existing_files.add(filename)
-                        successful_downloads += 1
-                else:
-                    failed_downloads += 1
-                progress_bar.update(1)
+        self.logger.warning(f"Max retries reached for {url}. Skipping.")
+        self.failed_downloads += 1
+        return False
 
-        self.logger.info(f"Successful downloads: {successful_downloads}")
-        self.logger.info(f"Failed downloads: {failed_downloads}")
-        print(f"Successful downloads: {successful_downloads}")
-        print(f"Failed downloads: {failed_downloads}")
+    def _get_filename(self, url):
+        parsed_url = urlparse(url)
+        path = parsed_url.path.strip('/')
+        filename = path.replace('/', '_') or 'index'
+        return f"{filename}.pdf"
+
+    def download_pdfs(self, urls, output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+
+        with ThreadPoolExecutor(max_workers=self.concurrency_level) as executor:
+            future_to_url = {executor.submit(self.download_pdf, url, output_dir): url for url in urls}
+            
+            with tqdm(total=len(urls), unit="file", desc="Downloading PDFs") as progress_bar:
+                for future in as_completed(future_to_url):
+                    url = future_to_url[future]
+                    try:
+                        success = future.result()
+                        if success:
+                            progress_bar.update(1)
+                        else:
+                            self.logger.warning(f"Failed to download: {url}")
+                    except Exception as e:
+                        self.logger.error(f"Unexpected error for {url}: {str(e)}")
+                        self.failed_downloads += 1
+
+        self.logger.info("PDF download process completed.")
